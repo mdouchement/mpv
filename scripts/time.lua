@@ -24,7 +24,7 @@
 -- SOFTWARE.
 
 --[[
-To configure this script use file show_table.conf in directory script-opts (the "script-opts"
+To configure this script use file time.conf in directory script-opts (the "script-opts"
 directory must be in the mpv configuration directory, typically ~/.config/mpv/).
 
 Example configuration would be:
