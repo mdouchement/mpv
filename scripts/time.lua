@@ -29,41 +29,34 @@ directory must be in the mpv configuration directory, typically ~/.config/mpv/).
 
 Example configuration would be:
 
-key_binding = ";"
+key_binding = ":"
 duration = 3
 style_tags = "{\\fnmonospace}"
 scale = 2
-font_size = 10
+font_size = 30
 font_color = "e6e6e6"
 
 --]]
 
+local os = require 'os'
 local mp = require 'mp'
 local options = require 'mp.options'
 local assdraw = require 'mp.assdraw'
 
 opts = {
-    key_binding = ";",
+    key_binding = ":",
     duration = 3,         -- in seconds
     style_tags = "",      -- e.g {\\fnmonospace}
     scale = 2,
-    font_size = 10,       -- multiplied by scale
+    font_size = 30,       -- multiplied by scale
     font_color = "e6e6e6" -- ASS hexa color (BGR order <bb><gg><rr>)
 }
 options.read_options(opts)
 
-function format_duration(duration)
-    local h = duration / 3600
-    local m = duration % 3600 / 60
-    local s = duration % 3600 % 60
-
-    return string.format("%02d:%02d:%02d", h, m, s)
-end
-
 function render(msg)
     local ass = assdraw.ass_new()
 
-    ass:an(7)
+    ass:an(9)
     ass:append(opts.style_tags)
     ass:append(string.format("{\\fs%d}", opts.font_size * opts.scale))
     ass:append(string.format("{\\1c&H%s}", opts.font_color))
@@ -79,26 +72,13 @@ function render(msg)
     mp.set_osd_ass(screenx, screeny, ass.text)
 end
 
-function compute_state()
-    local filename = mp.get_property("filename")
-    local percent = mp.get_property_number("percent-pos")
-    local position = mp.get_property_number("time-pos")
-    local remaining = mp.get_property_number("time-remaining")
-    local total = mp.get_property_number("duration")
-
-    local msg = string.format(
-        "%s\\N%d%%    %s (%s)    %s",
-        filename,
-        percent,
-        format_duration(position),
-        format_duration(remaining),
-        format_duration(total)
-    )
-    render(msg)
+function compute_time()
+    local now = os.date('%I:%M')
+    render(now)
 end
 
 local running = false
-function show_state()
+function show_time()
     if running then
         return
     end
@@ -106,7 +86,7 @@ function show_state()
 
     seconds = 0.0
     timer = mp.add_periodic_timer(0.05, function()
-        compute_state()
+        compute_time()
         seconds = seconds + 0.05
         if seconds >= opts.duration then
             render('')
@@ -116,4 +96,4 @@ function show_state()
     end)
 end
 
-mp.add_key_binding(opts.key_binding, "show-state", show_state)
+mp.add_key_binding(opts.key_binding, "show-time", show_time)
