@@ -45,6 +45,7 @@ local assdraw = require 'mp.assdraw'
 
 opts = {
     key_binding = ":",
+    format = "%H:%M",     -- Lua's date format
     duration = 3,         -- in seconds
     style_tags = "",      -- e.g {\\fnmonospace}
     scale = 2,
@@ -73,7 +74,7 @@ function render(msg)
 end
 
 function compute_time()
-    local now = os.date('%I:%M')
+    local now = os.date(opts.format)
     render(now)
 end
 
