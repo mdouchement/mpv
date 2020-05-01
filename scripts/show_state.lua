@@ -81,14 +81,19 @@ end
 
 function compute_state()
     local filename = mp.get_property("filename")
+    local pcurrent = mp.get_property("playlist-pos-1")
+    local pcount = mp.get_property("playlist-count")
+
     local percent = mp.get_property_number("percent-pos")
     local position = mp.get_property_number("time-pos")
-    local remaining = mp.get_property_number("time-remaining")
+    local remaining = mp.get_property_number("playtime-remaining")
     local total = mp.get_property_number("duration")
 
     local msg = string.format(
-        "%s\\N%d%%    %s (%s)    %s",
+        "%s\\N%s/%s\\N%d%%    %s (%s)    %s",
         filename,
+        pcurrent,
+        pcount,
         percent,
         format_duration(position),
         format_duration(remaining),
