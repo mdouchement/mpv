@@ -6,6 +6,8 @@
 -- playlist entry at the same position - this makes it "stable".)
 -- Add at most 5000 * 2 files when starting a file (before + after).
 
+-- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/autoload.lua
+
 --[[
 To configure this script use file autoload.conf in directory script-opts (the "script-opts"
 directory must be in the mpv configuration directory, typically ~/.config/mpv/).
@@ -16,6 +18,7 @@ disabled=no
 images=no
 videos=yes
 audio=yes
+ignore_hidden=yes
 
 --]]
 
@@ -29,7 +32,8 @@ o = {
     disabled = false,
     images = true,
     videos = true,
-    audio = true
+    audio = true,
+    ignore_hidden = true
 }
 options.read_options(o)
 
@@ -155,7 +159,9 @@ function find_and_add_entries()
         return
     end
     table.filter(files, function (v, k)
-        if string.match(v, "^%.") then
+        -- The current file could be a hidden file, ignoring it doesn't load other
+        -- files from the current directory.
+        if (o.ignore_hidden and not (v == filename) and string.match(v, "^%.")) then
             return false
         end
         local ext = get_extension(v)

@@ -1,11 +1,9 @@
---此lua脚本由软件No1修改并提供支持
---This lua script is modified by www.rjno1.com
---此lua脚本原始版本： github.com/mpv-player/mpv/blob/master/player/lua/osc.lua
---The original version of this lua script：github.com/mpv-player/mpv/blob/master/player/lua/osc.lua
 local assdraw = require 'mp.assdraw'
 local msg = require 'mp.msg'
 local opt = require 'mp.options'
 local utils = require 'mp.utils'
+
+-- https://github.com/Zren/mpv-osc-tethys
 
 --
 -- Parameters
@@ -34,7 +32,8 @@ local user_opts = {
     iamaprogrammer = false,     -- use native mpv values and disable OSC
                                 -- internal track list management (and some
                                 -- functions that depend on it)
-    layout = "bottombar",
+    -- layout = "bottombar",
+    layout = "tethys",
     seekbarstyle = "bar",       -- bar, diamond or knob
     seekbarhandlesize = 0.6,    -- size ratio of the diamond and knob handle
     seekrangestyle = "inverted",-- bar, line, slider, inverted or none
@@ -43,16 +42,20 @@ local user_opts = {
     seekbarkeyframes = true,    -- use keyframes when dragging the seekbar
     title = "${media-title}",   -- string compatible with property-expansion
                                 -- to be shown as OSC title
-    rjno1title = "MPV-EASY Player - ${filename}", --用来修改显示-口x时的标题
     tooltipborder = 1,          -- border of tooltip in bottom/topbar
     timetotal = false,          -- display total time instead of remaining time?
     timems = false,             -- display timecodes with milliseconds?
     visibility = "auto",        -- only used at init to set visibility_mode(...)
-    boxmaxchars = 145,           -- title crop threshold for box layout
+    -- visibility = "always",        -- only used at init to set visibility_mode(...)
+    boxmaxchars = 80,           -- title crop threshold for box layout
     boxvideo = false,           -- apply osc_param.video_margins to video
     windowcontrols = "auto",    -- whether to show window controls
     windowcontrols_alignment = "right", -- which side to show window controls on
     greenandgrumpy = false,     -- disable santa hat
+    livemarkers = true,         -- update seekbar chapter markers on duration change
+    chapters_osd = true,        -- whether to show chapters OSD on next/prev
+    playlist_osd = true,        -- whether to show playlist OSD on next/prev
+    chapter_fmt = "Chapter: %s", -- chapter print format for seekbar-hover. "no" to disable
 }
 
 -- read options from config and command-line
@@ -70,26 +73,6 @@ local osc_param = { -- calculated by osc_init()
 }
 
 local osc_styles = {
-
-
-    rjno150Buttons = "{\\blur0\\bord0\\1c&HF4EFED\\3c&HFFFFFF\\fs24\\fnmpv-osd-symbols}",
-    rjno140Buttons = "{\\blur0\\bord0\\1c&H8E807D\\3c&HFFFFFF\\fs16\\fnmpv-osd-symbols}",
-    rjno130Buttons = "{\\blur0\\bord0\\1c&HF4EFED\\3c&HFFFFFF\\fs24\\fnmpv-osd-symbols}",
-    rjno125Buttons = "{\\blur0\\bord0\\1c&HF4EFED\\3c&HFFFFFF\\fs29\\fnmpv-osd-symbols}",
-    rjno120Buttons = "{\\blur0\\bord0\\1c&HF4EFED\\3c&HFFFFFF\\fs24\\fnmpv-osd-symbols}",
-    rjno116Buttons = "{\\blur0\\bord0\\1c&H8E807D\\3c&HFFFFFF\\fs16\\fnmpv-osd-symbols}",
-    rjno11line1 = "{\\blur0\\bord0\\1c&H161211\\3c&HFFFFFF\\fs16\\fnmpv-osd-symbols}",
-    rjno11line2 = "{\\blur0\\bord0\\1c&H8E807D\\3c&HFFFFFF\\fs16\\fnmpv-osd-symbols}",
-    rjno11line3 = "{\\blur0\\bord0\\1c&H352D2C\\3c&HFFFFFF\\fs16\\fnmpv-osd-symbols}",
-    rjno1box = "{\\rDefault\\blur0\\bord0\\1c&H292120\\3c&HFFFFFF}",
-    rjno1timecodes = "{\\blur0\\bord0\\1c&H00E1FA\\3c&HFFFFFF\\fs13}",
-    rjno1timePosBar = "{\\blur0\\bord".. user_opts.tooltipborder .."\\1c&HAA908B\\3c&H000000\\fs24}",
-    rjno1vidtitleBar = "{\\blur0\\bord0\\1c&H7B6864\\3c&HFFFFFF\\fs13\\q2}",
-
-    rjno1wcButtons = "{\\1c&HFFFFFF\\fs24\\fnmpv-osd-symbols}",
-    rjno1wcTitle = "{\\1c&HFFFFFF\\fs18\\q2}",
-    rjno1wcBar = "{\\1c&H292120}",
-
     bigButtons = "{\\blur0\\bord0\\1c&HFFFFFF\\3c&HFFFFFF\\fs50\\fnmpv-osd-symbols}",
     smallButtonsL = "{\\blur0\\bord0\\1c&HFFFFFF\\3c&HFFFFFF\\fs19\\fnmpv-osd-symbols}",
     smallButtonsLlabel = "{\\fscx105\\fscy105\\fn" .. mp.get_property("options/osd-font") .. "}",
@@ -112,6 +95,108 @@ local osc_styles = {
     wcBar = "{\\1c&H000000}",
 }
 
+
+local tethys = {
+    -- Config
+    skipBy = 5, -- skipback/skipfrwd amount in seconds
+    skipByMore = 30, -- RightClick skipback/skipfrwd amount in seconds
+    skipMode = "exact", -- "exact" (mordenx default) or "relative+keyframes" (mpv default)
+
+    -- Sizes
+    seekbarHeight = 20,
+    controlsHeight = 64,
+    buttonTooltipSize = 20,
+    windowBarHeight = 44,
+    windowButtonSize = 44,
+    windowTitleSize = 24,
+    cacheTextSize = 20,
+    timecodeSize = 27,
+    seekbarTimestampSize = 30,
+    chapterTickSize = 6,
+    windowTitleOutline = 1,
+
+    -- Misc
+    osdSymbolFont = "mpv-osd-symbols", -- Seems to be hardcoded and unchangeable
+
+    -- Colors (uses GGBBRR for some reason)
+    -- Alpha ranges 0 (opache) .. 255 (transparent)
+    textColor = "FFFFFF",
+    buttonColor = "CCCCCC",
+    buttonHoveredColor = "FFFFFF",
+    buttonHoveredRectColor = "000000",
+    buttonHoveredRectAlpha = 255, -- Easily debug button geometry by setting to 80
+    tooltipColor = "CCCCCC",
+    windowBarColor = "000000",
+    windowBarAlpha = 255, -- (80 is mpv default) (255 morden default)
+    windowButtonColor = "CCCCCC",
+    closeButtonHoveredColor = "1111DD", -- #DD1111
+    seekbarHandleColor = "FFFFFF",
+    seekbarFgColor = "483DD7", -- #d73d48
+    seekbarBgColor = "929292",
+    seekbarCacheColor = "000000",
+    seekbarCacheAlpha = 128,
+    chapterTickColor = "CCCCCC",
+}
+tethys.bottomBarHeight = tethys.seekbarHeight + tethys.controlsHeight
+tethys.buttonW = tethys.controlsHeight
+tethys.buttonH = tethys.controlsHeight
+tethys.smallButtonSize = math.floor(tethys.buttonH * 2/3) -- 42
+tethys.trackButtonSize = math.floor(tethys.buttonH / 2) -- 32
+tethys.windowControlsRect = {
+    w = tethys.windowButtonSize * 3,
+    h = tethys.windowBarHeight,
+}
+
+tethys.windowBarAlphaTable = {[1] = tethys.windowBarAlpha, [2] = 255, [3] = 255, [4] = 255}
+tethys.seekbarCacheAlphaTable = {[1] = tethys.seekbarCacheAlpha, [2] = 255, [3] = 255, [4] = 255}
+
+tethys.showButtonHoveredRect = tethys.buttonHoveredRectAlpha < 255 -- Note: 255=transparent
+
+
+-- https://github.com/libass/libass/wiki/ASSv5-Override-Tags#color-and-alpha---c-o
+function genColorStyle(color)
+    return "{\\c&H"..color.."&}" -- Not sure why &H...& is used in santa_hat_lines
+    -- return "{\\c("..color..")}" -- Works
+    -- return "{\\c(#"..color..")}" -- Only works for paths, and breaks other stuff.
+end
+
+---- mpv's stats.lua has some ASS formatting
+-- https://github.com/mpv-player/mpv/blob/master/player/lua/stats.lua#L62
+-- https://github.com/mpv-player/mpv/blob/master/player/lua/stats.lua#L176
+-- "{\\r}{\\an7}{\\fs%d}{\\fn%s}{\\bord%f}{\\3c&H%s&}{\\1c&H%s&}{\\alpha&H%s&}{\\xshad%f}{\\yshad%f}{\\4c&H%s&}"
+-- {\\bord%f} = border size
+-- {\\3c&H%s&} = border color
+-- {\\1c&H%s&} = font color
+-- {\\alpha&H%s&} = alpha
+-- {\\xshad%f}{\\yshad%f} = shadow x,y offset
+-- {\\4c&H%s&} = shadow color
+---- \\q2 in windowTitle is unknown
+---- Not sure why \1c is rect fill color. Here's docs for \3c:
+-- https://github.com/libass/libass/wiki/Libass'-ASS-Extensions#borderstyle4
+-- "{\\1c&H"..color.."}"
+local tethysStyle = {
+    button = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)\\fn(%s)}"):format(tethys.buttonColor, tethys.buttonH, tethys.osdSymbolFont),
+    buttonHovered = genColorStyle(tethys.buttonHoveredColor),
+    buttonHoveredRect = ("{\\rDefault\\blur0\\bord0\\1c&H%s\\1a&H%X&}"):format(tethys.buttonHoveredRectColor, tethys.buttonHoveredRectAlpha),
+    smallButton = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)\\fn(%s)}"):format(tethys.buttonColor, tethys.smallButtonSize, tethys.osdSymbolFont),
+    trackButton = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)\\fn(%s)}"):format(tethys.buttonColor, tethys.trackButtonSize, tethys.osdSymbolFont),
+    windowBar = ("{\\1c&H%s}"):format(tethys.windowBarColor),
+    windowButton = ("{\\blur0\\bord(%d)\\1c&H%s\\3c&H000000\\fs(%d)\\fn(%s)}"):format(tethys.windowTitleOutline, tethys.windowButtonColor, tethys.windowButtonSize, tethys.osdSymbolFont),
+    closeButtonHovered = genColorStyle(tethys.closeButtonHoveredColor),
+    windowTitle = ("{\\blur0\\bord(%d)\\1c&H%s\\3c&H000000\\fs(%d)}"):format(tethys.windowTitleOutline, tethys.textColor, tethys.windowTitleSize),
+    buttonTooltip = ("{\\blur0\\bord(1)\\1c&H%s\\3c&H000000\\fs(%d)}"):format(tethys.tooltipColor, tethys.buttonTooltipSize),
+    timecode = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)}"):format(tethys.textColor, tethys.timecodeSize),
+    cacheText = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)}"):format(tethys.textColor, tethys.cacheTextSize, tethys.osdSymbolFont),
+    seekbar = ("{\\blur0\\bord0\\1c&H%s\\3c&HFFFFFF\\fs(%d)}"):format(tethys.seekbarFgColor, tethys.seekbarHeight),
+    seekbarTimestamp = ("{\\blur0\\bord(%d)\\1c&H%s\\3c&H000000\\fs(%d)}"):format(user_opts.tooltipborder, tethys.textColor, tethys.seekbarTimestampSize),
+    text = genColorStyle(tethys.textColor),
+    seekbarHandle = genColorStyle(tethys.seekbarHandleColor),
+    seekbarFg = genColorStyle(tethys.seekbarFgColor),
+    seekbarBg = genColorStyle(tethys.seekbarBgColor),
+    seekbarCache = genColorStyle(tethys.seekbarCacheColor),
+    chapterTick = genColorStyle(tethys.chapterTickColor),
+}
+
 -- internal states, do not touch
 local state = {
     showtime,                               -- time of last invocation (last mouse move)
@@ -126,9 +211,11 @@ local state = {
     tc_ms = user_opts.timems,               -- Should the timecodes display their time with milliseconds
     mp_screen_sizeX, mp_screen_sizeY,       -- last screen-resolution, to detect resolution changes to issue reINITs
     initREQ = false,                        -- is a re-init request pending?
+    marginsREQ = false,                     -- is a margins update pending?
     last_mouseX, last_mouseY,               -- last mouse position, to detect significant mouse movement
+    mouse_in_window = false,
     message_text,
-    message_timeout,
+    message_hide_timer,
     fullscreen = false,
     tick_timer = nil,
     tick_last_time = 0,                     -- when the last tick() was run
@@ -143,6 +230,7 @@ local state = {
     border = true,
     maximized = false,
     osd = mp.create_osd_overlay("ass-events"),
+    chapter_list = {},                      -- sorted by time
 }
 
 local window_control_box_width = 80
@@ -150,9 +238,37 @@ local tick_delay = 0.03
 
 local is_december = os.date("*t").month == 12
 
+
+---
+--- Icons
+---
+
+-- 44x44
+local tethysIcon_play = "{\\p1}m 33.733335 17.599999   b 38.081201 20.610064 38.081201 21.923269 33.733335 24.933333   b 19.01367 35.123867 5.866667 44 2.933333 44   b 0 44 0 39.6 0 21.266665   b 0 4.4 0 0 2.933333 0   b 5.866667 0 19.01367 7.409462 33.733335 17.599999{\\p0}"
+local tethysIcon_pause = "{\\p1}m 13 40.2064   b 13 45.263808 0 45.263808 0 40.2107   l 0 3.793057   b 0 -1.264352 13 -1.264352 13 3.793057   m 35 40.2064   b 35 45.263808 22 45.263808 22 40.2107   l 22 3.793057   b 22 -1.264352 35 -1.264352 35 3.793057{\\p0}"
+local mpvOsdIcon_close = "{\\p1}m 24 24   l 20.571428 24   l 12 15.535715   l 3.535714 24   l 0 24   l 0 20.571428   l 8.464286 12   l 0 3.535714   l 0 0   l 3.535714 0   l 12 8.464286   l 20.571428 0   l 24 0   l 24 3.535714   l 15.535715 12   l 24 20.464285{\\p0}"
+local mpvOsdIcon_maximize = "{\\p1}m 24 22   l 0 22   l 0 0   l 24 0   m 22 20   l 22 4   l 2 4   l 2 20{\\p0}"
+local mpvOsdIcon_minimize = "{\\p1}m 24 6   l 0 6   l 0 0   l 24 0{\\p0}"
+local mpvOsdIcon_restore = "{\\p1}m 24 14   l 17.999999 14   l 17.999999 22   l 0 22   l 0 7.999999   l 6 7.999999   l 6 0   l 24 0   m 22 12.000001   l 22 4   l 8 4   l 8 7.999999   l 17.999999 7.999999   l 17.999999 12.000001   m 16 20   l 16 12.000001   l 2 12.000001   l 2 20{\\p0}"
+
+-- 28x28
+local tethysIcon_skipback = "{\\p1}m 1.839456 0   l 1.839456 9.57764   l 11.417097 9.57764   l 11.417097 6.385093   l 7.490845 6.385093   b 10.868156 3.999689 15.42108 3.879191 18.959903 6.243757   b 22.988882 8.935835 24.547191 14.07368 22.692854 18.550442   b 20.838519 23.027205 16.103091 25.558703 11.350584 24.613371   b 6.598078 23.668038 3.192547 19.515531 3.192547 14.669918   l 0 14.669918   b 0 21.018992 4.499961 26.50492 10.72704 27.743563   b 16.954119 28.982206 23.212534 25.638369 25.642219 19.772589   b 28.071904 13.906809 26.01191 7.114815 20.732848 3.587458   b 18.093317 1.82378 15.008396 1.117148 12.021934 1.411289   b 9.514609 1.658238 7.077971 2.61433 5.032002 4.24218   l 5.032002 0{\\p0}"
+local tethysIcon_skipfrwd = "{\\p1}m 24.81566 0   l 24.81566 9.57764   l 15.238019 9.57764   l 15.238019 6.385093   l 19.16427 6.385093   b 15.78696 3.999689 11.234036 3.879191 7.695213 6.243757   b 3.666234 8.935835 2.107925 14.07368 3.962262 18.550442   b 5.816597 23.027205 10.552025 25.558703 15.304532 24.613371   b 20.057037 23.668038 23.462569 19.515531 23.462569 14.669918   l 26.655116 14.669918   b 26.655116 21.018992 22.155155 26.50492 15.928076 27.743563   b 9.700997 28.982206 3.442582 25.638369 1.012897 19.772589   b -1.416788 13.906809 0.643206 7.114815 5.922268 3.587458   b 8.561799 1.82378 11.64672 1.117148 14.633182 1.411289   b 17.140507 1.658238 19.577144 2.61433 21.623113 4.24218   l 21.623113 0{\\p0}"
+local tethysIcon_ch_prev = "{\\p1}m 14.611669 6   b 13.129442 7.026159 13.129442 7.473842 14.611669 8.500001   b 19.629738 11.974048 24.111671 15 25.111671 15   b 26.11167 15 26.11167 13.500001 26.11167 7.25   b 26.11167 1.500001 26.11167 0 25.111671 0   b 24.111671 0 19.629738 2.525952 14.611669 6   m 1.11167 6   b -0.370557 7.026159 -0.370557 7.473842 1.11167 8.500001   b 6.129739 11.974048 10.611672 15 11.611671 15   b 12.611671 15 12.611671 13.500001 12.611671 7.25   b 12.611671 1.500001 12.611671 0 11.611671 0   b 10.611672 0 6.129739 2.525952 1.11167 6{\\p0}"
+local tethysIcon_ch_next = "{\\p1}m 11.500001 6   b 12.982228 7.026159 12.982228 7.473842 11.500001 8.500001   b 6.481932 11.974048 1.999999 15 1 15   b 0 15 0 13.500001 0 7.25   b 0 1.500001 0 0 1 0   b 1.999999 0 6.481932 2.525952 11.500001 6   m 25 6   b 26.482227 7.026159 26.482227 7.473842 25 8.500001   b 19.981931 11.974048 15.499998 15 14.499999 15   b 13.499999 15 13.499999 13.500001 13.499999 7.25   b 13.499999 1.500001 13.499999 0 14.499999 0   b 15.499998 0 19.981931 2.525952 25 6{\\p0}"
+local tethysIcon_pl_prev = "{\\p1}m 9.133332 8.8   b 6.959399 10.305034 6.959399 10.961635 9.133332 12.466668   b 16.493166 17.561937 23.066668 22 24.533334 22   b 26 22 26 19.800002 26 10.633333   b 26 2.200001 26 0 24.533334 0   b 23.066668 0 16.493166 3.70473 9.133332 8.8   m 0 20.103196   b 0 22.631901 6.574631 22.631901 6.574631 20.105396   l 6.574631 1.896528   b 6.574631 -0.632176 0 -0.632176 0 1.896528{\\p0}"
+local tethysIcon_pl_next = "{\\p1}m 16.866668 8.8   b 19.040601 10.305034 19.040601 10.961635 16.866668 12.466668   b 9.506834 17.561937 2.933332 22 1.466666 22   b 0 22 0 19.800002 0 10.633333   b 0 2.200001 0 0 1.466666 0   b 2.933332 0 9.506834 3.70473 16.866668 8.8   m 26 20.103196   b 26 22.631901 19.425369 22.631901 19.425369 20.105396   l 19.425369 1.896528   b 19.425369 -0.632176 26 -0.632176 26 1.896528{\\p0}"
+
+
 --
 -- Helperfunctions
 --
+
+function kill_animation()
+    state.anistart = nil
+    state.animation = nil
+    state.anitype =  nil
+end
 
 function set_osd(res_x, res_y, text)
     if state.osd.res_x == res_x and
@@ -185,9 +301,13 @@ end
 
 -- return mouse position in virtual ASS coordinates (playresx/y)
 function get_virt_mouse_pos()
-    local sx, sy = get_virt_scale_factor()
-    local x, y = mp.get_mouse_pos()
-    return x * sx, y * sy
+    if state.mouse_in_window then
+        local sx, sy = get_virt_scale_factor()
+        local x, y = mp.get_mouse_pos()
+        return x * sx, y * sy
+    else
+        return -1, -1
+    end
 end
 
 function set_virt_mouse_area(x0, y0, x1, y1, name)
@@ -454,6 +574,18 @@ end
 
 local elements = {}
 
+function new_ass_node(elem_ass)
+    elem_ass:append("{}") -- hack to troll new_event into inserting a \n
+    elem_ass:new_event()
+end
+function reset_ass(elem_ass, element)
+    new_ass_node(elem_ass)
+    local elem_geo = element.layout.geometry
+    elem_ass:pos(elem_geo.x, elem_geo.y)
+    elem_ass:an(elem_geo.an)
+    elem_ass:append(element.layout.style)
+end
+
 function prepare_elements()
 
     -- remove elements without layout or invisble
@@ -483,11 +615,12 @@ function prepare_elements()
         local style_ass = assdraw.ass_new()
 
         -- prepare static elements
-        style_ass:append("{}") -- hack to troll new_event into inserting a \n
-        style_ass:new_event()
-        style_ass:pos(elem_geo.x, elem_geo.y)
-        style_ass:an(elem_geo.an)
-        style_ass:append(element.layout.style)
+        reset_ass(style_ass, element)
+        -- style_ass:append("{}") -- hack to troll new_event into inserting a \n
+        -- style_ass:new_event()
+        -- style_ass:pos(elem_geo.x, elem_geo.y)
+        -- style_ass:an(elem_geo.an)
+        -- style_ass:append(element.layout.style)
 
         element.style_ass = style_ass
 
@@ -534,17 +667,23 @@ function prepare_elements()
 
             -- -- --
 
-            static_ass:draw_start()
-
+            ---- This is drawn over
             -- the box
-            ass_draw_rr_h_cw(static_ass, 0, 0, elem_geo.w, elem_geo.h, r1, slider_lo.stype == "diamond")
-
+            -- static_ass:draw_start()
+            -- ass_draw_rr_h_cw(static_ass, 0, 0, elem_geo.w, elem_geo.h, r1, slider_lo.stype == "diamond")
             -- the "hole"
-            ass_draw_rr_h_ccw(static_ass, slider_lo.border, slider_lo.border,
-                              elem_geo.w - slider_lo.border, elem_geo.h - slider_lo.border,
-                              r2, slider_lo.stype == "diamond")
+            -- ass_draw_rr_h_ccw(static_ass, slider_lo.border, slider_lo.border,
+            --                   elem_geo.w - slider_lo.border, elem_geo.h - slider_lo.border,
+            --                   r2, slider_lo.stype == "diamond")
+            -- static_ass:draw_stop()
 
-            -- marker nibbles
+
+
+            -- Chapter Markers / Ticks / Nibbles
+            -- We store this ass as a property so we can draw them overtop the seekbar
+            local nibbles_ass = assdraw.ass_new()
+            nibbles_ass:append(tethysStyle.chapterTick)
+            nibbles_ass:draw_start()
             if not (element.slider.markerF == nil) and (slider_lo.gap > 0) then
                 local markers = element.slider.markerF()
                 for _,marker in pairs(markers) do
@@ -552,46 +691,17 @@ function prepare_elements()
                         (marker < element.slider.max.value) then
 
                         local s = get_slider_ele_pos_for(element, marker)
-
-                        if (slider_lo.gap > 1) then -- draw triangles
-
-                            local a = slider_lo.gap / 0.5 --0.866
-
-                            --top
-                            if (slider_lo.nibbles_top) then
-                                static_ass:move_to(s - (a/2), slider_lo.border)
-                                static_ass:line_to(s + (a/2), slider_lo.border)
-                                static_ass:line_to(s, foV)
-                            end
-
-                            --bottom
-                            if (slider_lo.nibbles_bottom) then
-                                static_ass:move_to(s - (a/2),
-                                    elem_geo.h - slider_lo.border)
-                                static_ass:line_to(s,
-                                    elem_geo.h - foV)
-                                static_ass:line_to(s + (a/2),
-                                    elem_geo.h - slider_lo.border)
-                            end
-
-                        else -- draw 2x1px nibbles
-
-                            --top
-                            if (slider_lo.nibbles_top) then
-                                static_ass:rect_cw(s - 1, slider_lo.border,
-                                    s + 1, slider_lo.border + slider_lo.gap);
-                            end
-
-                            --bottom
-                            if (slider_lo.nibbles_bottom) then
-                                static_ass:rect_cw(s - 1,
-                                    elem_geo.h -slider_lo.border -slider_lo.gap,
-                                    s + 1, elem_geo.h - slider_lo.border);
-                            end
-                        end
+                        local a = tethys.chapterTickSize * 0.8
+                        local sliderMid = elem_geo.h / 2
+                        local tickY = sliderMid - tethys.chapterTickSize
+                        nibbles_ass:move_to(s - (a/2), tickY)
+                        nibbles_ass:line_to(s + (a/2), tickY)
+                        nibbles_ass:line_to(s, sliderMid)
                     end
                 end
             end
+            nibbles_ass:draw_stop()
+            slider_lo.nibbles_ass = nibbles_ass
         end
 
         element.static_ass = static_ass
@@ -611,7 +721,34 @@ end
 -- Element Rendering
 --
 
+-- returns nil or a chapter element from the native property chapter-list
+function get_chapter(possec)
+    local cl = state.chapter_list  -- sorted, get latest before possec, if any
+
+    for n=#cl,1,-1 do
+        if possec >= cl[n].time then
+            return cl[n]
+        end
+    end
+end
+
 function render_elements(master_ass)
+
+    -- when the slider is dragged or hovered and we have a target chapter name
+    -- then we use it instead of the normal title. we calculate it before the
+    -- render iterations because the title may be rendered before the slider.
+    state.forced_title = nil
+    local se, ae = state.slider_element, elements[state.active_element]
+    if user_opts.chapter_fmt ~= "no" and se and (ae == se or (not ae and mouse_hit(se))) then
+        local dur = mp.get_property_number("duration", 0)
+        if dur > 0 then
+            local possec = get_slider_value(se) * dur / 100 -- of mouse pos
+            local ch = get_chapter(possec)
+            if ch and ch.title and ch.title ~= "" then
+                state.forced_title = string.format(user_opts.chapter_fmt, ch.title)
+            end
+        end
+    end
 
     for n=1, #elements do
         local element = elements[n]
@@ -672,101 +809,98 @@ function render_elements(master_ass)
                 foH = slider_lo.border + slider_lo.gap
             end
 
+            -- Reset everything as static_ass ended with draw_stop()
+            reset_ass(elem_ass, element)
+
             if pos then
                 xp = get_slider_ele_pos_for(element, pos)
 
-                if slider_lo.stype ~= "bar" then
-                    local r = (user_opts.seekbarhandlesize * innerH) / 2
-                    ass_draw_rr_h_cw(elem_ass, xp - r, foH - r,
-                                     xp + r, foH + r,
-                                     r, slider_lo.stype == "diamond")
-                else
-                    local h = 0
-                    if seekRanges and user_opts.seekrangeseparate and slider_lo.rtype ~= "inverted" then
-                        h = seekRangeLineHeight
-                    end
-                    elem_ass:rect_cw(foH, foV, xp, elem_geo.h - foV - h)
+                -- Thick Slider BG Before Handle
+                local sliderFgRatio = 6 -- 1/6th Height
+                elem_ass:append(tethysStyle.seekbarFg)
+                elem_ass:draw_start()
+                -- Note: round_rect_cw(x0, y0, x1, y1, r1, r2)
+                elem_ass:round_rect_cw(
+                    foH - innerH / sliderFgRatio,
+                    foH - innerH / sliderFgRatio,
+                    xp,
+                    foH + innerH / sliderFgRatio,
+                    innerH / sliderFgRatio,
+                    0
+                )
+                elem_ass:draw_stop()
+                reset_ass(elem_ass, element)
 
-                    if seekRanges and not user_opts.seekrangeseparate and slider_lo.rtype ~= "inverted" then
-                        -- Punch holes for the seekRanges to be drawn later
-                        for _,range in pairs(seekRanges) do
-                            if range["start"] < pos then
-                                local pstart = get_slider_ele_pos_for(element, range["start"])
-                                local pend = xp
+                -- Thin Slider BG After Handle
+                -- local sliderBgRatio = 15 -- 1/15th Height
+                local sliderBgRatio = 6
+                elem_ass:append(tethysStyle.seekbarBg)
+                elem_ass:draw_start()
+                -- Note: round_rect_cw(x0, y0, x1, y1, r1, r2)
+                elem_ass:round_rect_cw(
+                    xp,
+                    foH - innerH / sliderBgRatio,
+                    elem_geo.w - foH + innerH / sliderBgRatio,
+                    foH + innerH / sliderBgRatio,
+                    0,
+                    innerH / sliderBgRatio
+                )
+                elem_ass:draw_stop()
+                reset_ass(elem_ass, element)
 
-                                if pos > range["end"] then
-                                    pend = get_slider_ele_pos_for(element, range["end"])
-                                end
-                                elem_ass:rect_ccw(pstart, elem_geo.h - foV - seekRangeLineHeight, pend, elem_geo.h - foV)
-                            end
-                        end
-                    end
-                end
-
-                if slider_lo.rtype == "slider" then
-                    ass_draw_rr_h_cw(elem_ass, foH - innerH / 6, foH - innerH / 6,
-                                     xp, foH + innerH / 6,
-                                     innerH / 6, slider_lo.stype == "diamond", 0)
-                    ass_draw_rr_h_cw(elem_ass, xp, foH - innerH / 15,
-                                     elem_geo.w - foH + innerH / 15, foH + innerH / 15,
-                                     0, slider_lo.stype == "diamond", innerH / 15)
-                    for _,range in pairs(seekRanges or {}) do
-                        local pstart = get_slider_ele_pos_for(element, range["start"])
-                        local pend = get_slider_ele_pos_for(element, range["end"])
-                        ass_draw_rr_h_ccw(elem_ass, pstart, foH - innerH / 21,
-                                          pend, foH + innerH / 21,
-                                          innerH / 21, slider_lo.stype == "diamond")
-                    end
-                end
-            end
-
-            if seekRanges then
-                if slider_lo.rtype ~= "inverted" then
-                    elem_ass:draw_stop()
-                    elem_ass:merge(element.style_ass)
-                    ass_append_alpha(elem_ass, element.layout.alpha, user_opts.seekrangealpha)
-                    elem_ass:merge(element.static_ass)
-                end
-
-                for _,range in pairs(seekRanges) do
+                -- Cache / Seek Ranges
+                elem_ass:append(tethysStyle.seekbarCache)
+                ass_append_alpha(elem_ass, tethys.seekbarCacheAlphaTable, 0)
+                elem_ass:draw_start()
+                -- local cacheBgRatio = 21 -- 1/21th Height
+                local seekbarY1 = foH - innerH / sliderFgRatio
+                local seekbarY2 = foH + innerH / sliderFgRatio
+                local cachebarY1 = seekbarY1 + 1
+                local cachebarY2 = seekbarY2 - 1
+                for _,range in pairs(seekRanges or {}) do
                     local pstart = get_slider_ele_pos_for(element, range["start"])
                     local pend = get_slider_ele_pos_for(element, range["end"])
-
-                    if slider_lo.rtype == "slider" then
-                        ass_draw_rr_h_cw(elem_ass, pstart, foH - innerH / 21,
-                                         pend, foH + innerH / 21,
-                                         innerH / 21, slider_lo.stype == "diamond")
-                    elseif slider_lo.rtype == "line" then
-                        if slider_lo.stype == "bar" then
-                            elem_ass:rect_cw(pstart, elem_geo.h - foV - seekRangeLineHeight, pend, elem_geo.h - foV)
-                        else
-                            ass_draw_rr_h_cw(elem_ass, pstart - innerH / 8, foH - innerH / 8,
-                                             pend + innerH / 8, foH + innerH / 8,
-                                             innerH / 8, slider_lo.stype == "diamond")
-                        end
-                    elseif slider_lo.rtype == "bar" then
-                        if slider_lo.stype ~= "bar" then
-                            ass_draw_rr_h_cw(elem_ass, pstart - innerH / 2, foV,
-                                             pend + innerH / 2, foV + innerH,
-                                             innerH / 2, slider_lo.stype == "diamond")
-                        elseif range["end"] >= (pos or 0) then
-                            elem_ass:rect_cw(pstart, foV, pend, elem_geo.h - foV)
-                        else
-                            elem_ass:rect_cw(pstart, elem_geo.h - foV - seekRangeLineHeight, pend, elem_geo.h - foV)
-                        end
-                    elseif slider_lo.rtype == "inverted" then
-                        if slider_lo.stype ~= "bar" then
-                            ass_draw_rr_h_ccw(elem_ass, pstart, (elem_geo.h / 2) - 1, pend,
-                                              (elem_geo.h / 2) + 1,
-                                              1, slider_lo.stype == "diamond")
-                        else
-                            elem_ass:rect_ccw(pstart, (elem_geo.h / 2) - 1, pend, (elem_geo.h / 2) + 1)
-                        end
-                    end
+                    -- Note: round_rect_ccw(x0, y0, x1, y1, r1, r2)
+                    -- elem_ass:round_rect_ccw(
+                    --     pstart,
+                    --     foH - innerH / cacheBgRatio,
+                    --     pend,
+                    --     foH + innerH / cacheBgRatio,
+                    --     innerH / cacheBgRatio,
+                    --     nil
+                    -- )
+                    elem_ass:round_rect_ccw(
+                        pstart,
+                        cachebarY1,
+                        pend,
+                        cachebarY2,
+                        0,
+                        nil
+                    )
                 end
-            end
+                elem_ass:draw_stop()
+                reset_ass(elem_ass, element)
 
-            elem_ass:draw_stop()
+                -- Chapter Ticks
+                elem_ass:merge(slider_lo.nibbles_ass)
+                reset_ass(elem_ass, element)
+
+                -- Circle Knob/Handle
+                elem_ass:append(tethysStyle.seekbarHandle)
+                elem_ass:draw_start()
+                local r = (user_opts.seekbarhandlesize * innerH) / 2
+                -- Note: round_rect_cw(x0, y0, x1, y1, r1, r2)
+                elem_ass:round_rect_cw(
+                    xp - r,
+                    foH - r,
+                    xp + r,
+                    foH + r,
+                    r,
+                    nil
+                )
+                elem_ass:draw_stop()
+                reset_ass(elem_ass, element)
+            end
 
             -- add tooltip
             if not (element.slider.tooltipF == nil) then
@@ -814,6 +948,7 @@ function render_elements(master_ass)
             end
 
         elseif (element.type == "button") then
+            local button_lo = element.layout.button
 
             local buttontext
             if type(element.content) == "function" then
@@ -821,9 +956,6 @@ function render_elements(master_ass)
             elseif not (element.content == nil) then
                 buttontext = element.content -- text objects
             end
-
-	    --匹配:(XXX) unknows 替换成:(XXX),注意XXX只能为0-3个字符
-	    buttontext = buttontext:gsub(":%((.?.?.?)%) unknown ", ":%(%1%)")  --gsub("%) unknown %(\"", "")
 
             local maxchars = element.layout.button.maxchars
             if not (maxchars == nil) and (#buttontext > maxchars) then
@@ -841,7 +973,66 @@ function render_elements(master_ass)
                     (maxchars/#buttontext)*100) .. buttontext
             end
 
+            local isButton = element.eventresponder and (
+                not (element.eventresponder["mbtn_left_down"] == nil)
+                or not (element.eventresponder["mbtn_left_up"] == nil)
+            )
+            local buttonHovered = mouse_hit(element)
+            if isButton and buttonHovered and element.enabled then
+                buttontext = button_lo.hover_style .. buttontext
+
+                -- Hover BG Rect
+                if tethys.showButtonHoveredRect then
+                    local elem_geo = element.layout.geometry
+                    local bgrect_ass = assdraw.ass_new()
+                    bgrect_ass:merge(style_ass)
+                    bgrect_ass:append(tethysStyle.buttonHoveredRect)
+                    bgrect_ass:draw_start()
+                    bgrect_ass:round_rect_cw(
+                        0, 0, elem_geo.w, elem_geo.h,
+                        0, 0
+                    )
+                    bgrect_ass:draw_stop()
+                    master_ass:merge(bgrect_ass)
+                end
+
+                -- Hover Glow/Shadow
+                local shadow_ass = assdraw.ass_new()
+                shadow_ass:merge(style_ass)
+                shadow_ass:append("{\\blur5}" .. buttontext .. "{\\blur0}")
+                master_ass:merge(shadow_ass)
+            end
+
             elem_ass:append(buttontext)
+
+            -- Tooltip
+            if buttonHovered and (not (button_lo.tooltip == nil)) then
+                local tx = button_lo.tooltip_geo.x
+                local ty = button_lo.tooltip_geo.y
+                local tooltipAlpha =  {[1] = 0, [2] = 255, [3] = 88, [4] = 255} -- Opache Text, 65% opacity outlines
+                local labelList = {}
+                if type(button_lo.tooltip) == "function" then
+                    labelList = button_lo.tooltip()
+                else
+                    labelList = button_lo.tooltip
+                end
+                if type(labelList) == "string" then
+                    labelList = { labelList }
+                end
+                if not (type(labelList) == "table") then
+                    labelList = {}
+                end
+                for i, label in ipairs(labelList) do
+                    new_ass_node(elem_ass)
+                    elem_ass:pos(tx, ty - ((i-1) * tethys.buttonTooltipSize))
+                    elem_ass:an(button_lo.tooltip_an)
+                    elem_ass:append(button_lo.tooltip_style)
+                    ass_append_alpha(elem_ass, tooltipAlpha, 0)
+                    elem_ass.scale = 1
+                    elem_ass:append(label)
+                    elem_ass.scale = 4
+                end
+            end
         end
 
         master_ass:merge(elem_ass)
@@ -920,7 +1111,7 @@ end
 
 function show_message(text, duration)
 
-    --print("text: "..text.."   duration: " .. duration)
+    -- print("text: "..text.."   duration: " .. duration)
     if duration == nil then
         duration = tonumber(mp.get_property("options/osd-duration")) / 1000
     elseif not type(duration) == "number" then
@@ -935,12 +1126,20 @@ function show_message(text, duration)
     text = string.gsub(text, "\n", "\\N")
 
     state.message_text = text
-    state.message_timeout = mp.get_time() + duration
+
+    if not state.message_hide_timer then
+        state.message_hide_timer = mp.add_timeout(0, request_tick)
+    end
+    state.message_hide_timer:kill()
+    state.message_hide_timer.timeout = duration
+    state.message_hide_timer:resume()
+    request_tick()
 end
 
 function render_message(ass)
-    if not(state.message_timeout == nil) and not(state.message_text == nil)
-        and state.message_timeout > mp.get_time() then
+    if state.message_hide_timer and state.message_hide_timer:is_enabled() and
+       state.message_text
+    then
         local _, lines = string.gsub(state.message_text, "\\N", "")
 
         local fontsize = tonumber(mp.get_property("options/osd-font-size"))
@@ -958,7 +1157,6 @@ function render_message(ass)
         ass:append(style .. state.message_text)
     else
         state.message_text = nil
-        state.message_timeout = nil
     end
 end
 
@@ -998,6 +1196,7 @@ function add_layout(name)
         if (elements[name].type == "button") then
             elements[name].layout.button = {
                 maxchars = nil,
+                hover_style = tethysStyle.buttonHovered,
             }
         elseif (elements[name].type == "slider") then
             -- slider defaults
@@ -1024,17 +1223,19 @@ end
 
 -- Window Controls
 function window_controls(topbar)
+    local windowBarHeight = 30
+    local windowButtonSize = tethys.windowButtonSize
+    local windowBarSpacing = 5
     local wc_geo = {
         x = 0,
-	-- -2去除默认情况下上方和边框之间的4px间隔
-        y = 30 + user_opts.barmargin -2,
-        an = 1,
+        y = tethys.windowBarHeight + user_opts.barmargin,
+        an = 1, -- x,y is bottom left
         w = osc_param.playresx,
-        h = 30,
+        h = tethys.windowBarHeight,
     }
 
     local alignment = window_controls_alignment()
-    local controlbox_w = window_control_box_width
+    local controlbox_w = windowBarSpacing + tethys.windowControlsRect.w
     local titlebox_w = wc_geo.w - controlbox_w
 
     -- Default alignment is "right"
@@ -1059,16 +1260,33 @@ function window_controls(topbar)
     lo = add_layout("wcbar")
     lo.geometry = wc_geo
     lo.layer = 10
-    lo.style = osc_styles.rjno1wcBar
-    lo.alpha[1] = user_opts.boxalpha
+    lo.style = tethysStyle.windowBar
+    lo.alpha = tethys.windowBarAlphaTable
 
-    local button_y = wc_geo.y - (wc_geo.h / 2)
-    local first_geo =
-        {x = controlbox_left + 5, y = button_y, an = 4, w = 25, h = 25}
-    local second_geo =
-        {x = controlbox_left + 30, y = button_y, an = 4, w = 25, h = 25}
-    local third_geo =
-        {x = controlbox_left + 55, y = button_y, an = 4, w = 25, h = 25}
+    local winControlsX = controlbox_left + windowBarSpacing + tethys.windowButtonSize/2
+    local winControlsY = wc_geo.y - (wc_geo.h / 2)
+    local winControlsAlignment = 5 -- x,y is center
+    local first_geo = {
+        x = winControlsX + tethys.windowButtonSize*0,
+        y = winControlsY,
+        an = winControlsAlignment,
+        w = tethys.windowButtonSize,
+        h = tethys.windowButtonSize,
+    }
+    local second_geo = {
+        x = winControlsX + tethys.windowButtonSize*1,
+        y = winControlsY,
+        an = winControlsAlignment,
+        w = tethys.windowButtonSize,
+        h = tethys.windowButtonSize,
+    }
+    local third_geo = {
+        x = winControlsX + tethys.windowButtonSize*2,
+        y = winControlsY,
+        an = winControlsAlignment,
+        w = tethys.windowButtonSize,
+        h = tethys.windowButtonSize,
+    }
 
     -- Window control buttons use symbols in the custom mpv osd font
     -- because the official unicode codepoints are sufficiently
@@ -1078,28 +1296,31 @@ function window_controls(topbar)
 
     -- Close: 🗙
     ne = new_element("close", "button")
-    ne.content = "\238\132\149"
+    ne.content = mpvOsdIcon_close
     ne.eventresponder["mbtn_left_up"] =
         function () mp.commandv("quit") end
     lo = add_layout("close")
     lo.geometry = alignment == "left" and first_geo or third_geo
-    lo.style = osc_styles.rjno1wcButtons
+    lo.style = tethysStyle.windowButton
+    lo.button.hover_style = tethysStyle.closeButtonHovered
+    lo.alpha[3] = 0 -- show outline (aka border)
 
     -- Minimize: 🗕
     ne = new_element("minimize", "button")
-    ne.content = "\238\132\146"
+    ne.content = mpvOsdIcon_minimize
     ne.eventresponder["mbtn_left_up"] =
         function () mp.commandv("cycle", "window-minimized") end
     lo = add_layout("minimize")
     lo.geometry = alignment == "left" and second_geo or first_geo
-    lo.style = osc_styles.rjno1wcButtons
+    lo.style = tethysStyle.windowButton
+    lo.alpha[3] = 0 -- show outline (aka border)
 
     -- Maximize: 🗖 /🗗
     ne = new_element("maximize", "button")
     if state.maximized or state.fullscreen then
-        ne.content = "\238\132\148"
+        ne.content = mpvOsdIcon_restore
     else
-        ne.content = "\238\132\147"
+        ne.content = mpvOsdIcon_maximize
     end
     ne.eventresponder["mbtn_left_up"] =
         function ()
@@ -1111,7 +1332,8 @@ function window_controls(topbar)
         end
     lo = add_layout("maximize")
     lo.geometry = alignment == "left" and third_geo or second_geo
-    lo.style = osc_styles.rjno1wcButtons
+    lo.style = tethysStyle.windowButton
+    lo.alpha[3] = 0 -- show outline (aka border)
 
     -- deadzone below window controls
     local sh_area_y0, sh_area_y1
@@ -1132,24 +1354,30 @@ function window_controls(topbar)
     -- Window Title
     ne = new_element("wctitle", "button")
     ne.content = function ()
-        --local title = mp.command_native({"expand-text", user_opts.title})
-	--使用这个lua脚本顶部设置中的rjno1title参数替代title参数显示标题
-	local title = mp.command_native({"expand-text", user_opts.rjno1title})
+        local title = mp.command_native({"expand-text", user_opts.title})
         -- escape ASS, and strip newlines and trailing slashes
         title = title:gsub("\\n", " "):gsub("\\$", ""):gsub("{","\\{")
         return not (title == "") and title or "mpv"
     end
-    local left_pad = 5
-    local right_pad = 10
+    local vertPad = (wc_geo.h - tethys.windowTitleSize)/2
+    local leftPad = vertPad
+    local rightPad = vertPad * 2
     lo = add_layout("wctitle")
-    -- -3用来解决由于字体从24变为18后字体太靠下的问题
-    lo.geometry =
-        { x = titlebox_left + left_pad, y = wc_geo.y - 3 -3, an = 1,
-          w = titlebox_w, h = wc_geo.h }
+    lo.geometry = {
+        x = titlebox_left + leftPad,
+        y = wc_geo.y - wc_geo.h/2,
+        an = 4, -- x,y is left-center
+        w = titlebox_w,
+        h = wc_geo.h,
+    }
     lo.style = string.format("%s{\\clip(%f,%f,%f,%f)}",
-        osc_styles.rjno1wcTitle,
-        titlebox_left + left_pad, wc_geo.y - wc_geo.h,
-        titlebox_right - right_pad , wc_geo.y + wc_geo.h)
+        tethysStyle.windowTitle,
+        lo.geometry.x - tethys.windowTitleOutline,
+        wc_geo.y - wc_geo.h - tethys.windowTitleOutline,
+        titlebox_right - rightPad + tethys.windowTitleOutline,
+        wc_geo.y + tethys.windowTitleOutline
+    )
+    lo.alpha[3] = 0 -- show text outline (aka border)
 
     add_area("window-controls-title",
              titlebox_left, 0, titlebox_right, wc_geo.h)
@@ -1165,10 +1393,10 @@ local layouts = {}
 layouts["box"] = function ()
 
     local osc_geo = {
-        w = 1100,    -- width
-        h = 65,    -- height
-        r = 0,     -- corner-radius
-        p = 0,     -- padding
+        w = 550,    -- width
+        h = 138,    -- height
+        r = 10,     -- corner-radius
+        p = 15,     -- padding
     }
 
     -- make sure the OSC actually fits into the video
@@ -1223,7 +1451,7 @@ layouts["box"] = function ()
 
     lo.geometry = {x = posX, y = posY, an = 5, w = osc_w, h = osc_h}
     lo.layer = 10
-    lo.style = osc_styles.rjno1box
+    lo.style = osc_styles.box
     lo.alpha[1] = user_opts.boxalpha
     lo.alpha[3] = user_opts.boxalpha
     lo.box.radius = osc_r
@@ -1231,174 +1459,109 @@ layouts["box"] = function ()
     --
     -- Title row
     --
---an是元素根据自己的中心线上下浮动，an=1时 元素中心全部在中心点上，an=9 元素全部在中心点右侧和之下
---box左上角x坐标 posX - pos_offsetX 但an=5 元素中心点坐标和这个坐标一致，所以还要根据an=？加减元素的宽度
---box左上角y坐标 posY - pos_offsetY 但an=5 元素中心点坐标和这个坐标一致，所以还要根据an=？加减元素的高度
-	local rjno1X = posX - pos_offsetX
-	local rjno1Y = posY - pos_offsetY
 
+    local titlerowY = posY - pos_offsetY - 10
+
+    lo = add_layout("title")
+    lo.geometry = {x = posX, y = titlerowY, an = 8, w = 496, h = 12}
+    lo.style = osc_styles.vidtitle
+    lo.button.maxchars = user_opts.boxmaxchars
+
+    lo = add_layout("pl_prev")
+    lo.geometry =
+        {x = (posX - pos_offsetX), y = titlerowY, an = 7, w = 12, h = 12}
+    lo.style = osc_styles.topButtons
+
+    lo = add_layout("pl_next")
+    lo.geometry =
+        {x = (posX + pos_offsetX), y = titlerowY, an = 9, w = 12, h = 12}
+    lo.style = osc_styles.topButtons
+
+    --
+    -- Big buttons
+    --
+
+    local bigbtnrowY = posY - pos_offsetY + 35
+    local bigbtndist = 60
+
+    lo = add_layout("playpause")
+    lo.geometry =
+        {x = posX, y = bigbtnrowY, an = 5, w = 40, h = 40}
+    lo.style = osc_styles.bigButtons
+
+    lo = add_layout("skipback")
+    lo.geometry =
+        {x = posX - bigbtndist, y = bigbtnrowY, an = 5, w = 40, h = 40}
+    lo.style = osc_styles.bigButtons
+
+    lo = add_layout("skipfrwd")
+    lo.geometry =
+        {x = posX + bigbtndist, y = bigbtnrowY, an = 5, w = 40, h = 40}
+    lo.style = osc_styles.bigButtons
+
+    lo = add_layout("ch_prev")
+    lo.geometry =
+        {x = posX - (bigbtndist * 2), y = bigbtnrowY, an = 5, w = 40, h = 40}
+    lo.style = osc_styles.bigButtons
+
+    lo = add_layout("ch_next")
+    lo.geometry =
+        {x = posX + (bigbtndist * 2), y = bigbtnrowY, an = 5, w = 40, h = 40}
+    lo.style = osc_styles.bigButtons
+
+    lo = add_layout("cy_audio")
+    lo.geometry =
+        {x = posX - pos_offsetX, y = bigbtnrowY, an = 1, w = 70, h = 18}
+    lo.style = osc_styles.smallButtonsL
+
+    lo = add_layout("cy_sub")
+    lo.geometry =
+        {x = posX - pos_offsetX, y = bigbtnrowY, an = 7, w = 70, h = 18}
+    lo.style = osc_styles.smallButtonsL
+
+    lo = add_layout("tog_fs")
+    lo.geometry =
+        {x = posX+pos_offsetX - 25, y = bigbtnrowY, an = 4, w = 25, h = 25}
+    lo.style = osc_styles.smallButtonsR
+
+    lo = add_layout("volume")
+    lo.geometry =
+        {x = posX+pos_offsetX - (25 * 2) - osc_geo.p,
+         y = bigbtnrowY, an = 4, w = 25, h = 25}
+    lo.style = osc_styles.smallButtonsR
 
     --
     -- Seekbar
     --
-	geo ={x = rjno1X + 1100 / 2 , y = rjno1Y + 6+8 , an = 5, w = 1080, h = 9}
---    lo = add_layout("seekbar")
-
---if user_opts["seekbarstyle"] ~= "knob" then
-
-   new_element("bgbar1", "box")
-    lo = add_layout("bgbar1")
-
-    lo.geometry = geo
-    lo.layer = 13
-    lo.style = osc_styles.rjno1vidtitleBar
-    lo.alpha[1] =
-        math.min(255, user_opts.boxalpha + (255 - user_opts.boxalpha)*0.05)
-    if not (user_opts["seekbarstyle"] == "bar") then
-        lo.box.radius = geo.h / 2
-        lo.box.hexagon = user_opts["seekbarstyle"] == "diamond"
-    end
-
---end
 
     lo = add_layout("seekbar")
-    lo.geometry = geo
-    lo.style = osc_styles.rjno1timecodes
-    lo.slider.border = 0
-    lo.slider.gap = 0
-    lo.slider.tooltip_style = osc_styles.rjno1timePosBar
-    lo.slider.tooltip_an = 5
+    lo.geometry =
+        {x = posX, y = posY+pos_offsetY-22, an = 2, w = pos_offsetX*2, h = 15}
+    lo.style = osc_styles.timecodes
+    lo.slider.tooltip_style = osc_styles.vidtitle
     lo.slider.stype = user_opts["seekbarstyle"]
     lo.slider.rtype = user_opts["seekrangestyle"]
 
---if user_opts["seekbarstyle"] == "knob" then
---	lo.geometry.y = rjno1Y + 6 + 9
---	lo.geometry.h = 16
---	lo.geometry.w = 1100
---end
+    --
+    -- Timecodes + Cache
+    --
 
+    local bottomrowY = posY + pos_offsetY - 5
 
-
-
-	geo ={x = rjno1X + 1100 / 2 , y = rjno1Y + 6+8 + 14 , an = 5, w = 1080, h = 1}
-
-   new_element("bgbar2", "box")
-    lo = add_layout("bgbar2")
-
-    lo.geometry = geo
-    lo.layer = 13
-    lo.style = osc_styles.rjno11line1
-    lo.alpha[1] =
-        math.min(255, user_opts.boxalpha + (255 - user_opts.boxalpha)*0.05)
-
-
-
-
-
-    lo = add_layout("playpause")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 0 + 10 * 2.4, y = rjno1Y + 10 * 3 + 30 / 2 + 2 , an = 5, w = 26, h = 30}
-    lo.style = osc_styles.rjno150Buttons
-
-
-    -- lo = add_layout("ch_prev")
-    -- lo.geometry = {x = rjno1X + 10 * 3.5 * 1 + 10 * 3 -8, y = rjno1Y + 10 * 1.6 + 50 / 2 , an = 5, w = 30, h = 50}
-    -- lo.style = osc_styles.rjno140Buttons
-
-	lo = add_layout("skipback")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 1 + 10 * 2.4, y = rjno1Y + 10 * 3 + 30 / 2 + 2 , an = 5, w = 26, h = 30}
-    lo.style = osc_styles.rjno150Buttons
-
-
-    lo = add_layout("skipfrwd")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 2 + 10 * 2.4, y = rjno1Y + 10 * 3 + 30 / 2 + 2 , an = 5, w = 26, h = 30}
-    lo.style = osc_styles.rjno150Buttons
-
-
-	-- lo = add_layout("ch_next")
-    -- lo.geometry = {x = rjno1X + 10 * 3.5 * 5 + 10 * 3 -8, y = rjno1Y + 10 * 1.6 + 50 / 2 , an = 5, w = 30, h = 50}
-    -- lo.style = osc_styles.rjno140Buttons
-
-    lo = add_layout("pl_prev")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 3 + 10 * 2.4, y = rjno1Y + 10 * 3 + 30 / 2 + 2 , an = 5, w = 26, h = 30}
-    lo.style = osc_styles.rjno150Buttons
-
-    lo = add_layout("pl_next")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 4 + 10 * 2.4, y = rjno1Y + 10 * 3 + 30 / 2 + 2 , an = 5, w = 26, h = 30}
-    lo.style = osc_styles.rjno150Buttons
-
-
-
-
-
-
---an = 1 这样左侧的时间变长才会往右，但y轴要调整
     lo = add_layout("tc_left")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 5 + 10 * 2.4 + 110/2 - 17, y = rjno1Y + 10 * 3 + 30 / 2 + 2 +0, an = 5, w = 110, h = 20}
-    lo.style = osc_styles.rjno140Buttons
+    lo.geometry =
+        {x = posX - pos_offsetX, y = bottomrowY, an = 4, w = 110, h = 18}
+    lo.style = osc_styles.timecodes
 
-
-
-	geo ={x = rjno1X + 10 * 2.4 * 5 + 10 * 2.4 + 80 , y = rjno1Y + 10 * 3 + 30 / 2 + 2 +0 , an = 5, w = 2, h = 11}
-
-   new_element("bgbar3", "box")
-    lo = add_layout("bgbar3")
-
-    lo.geometry = geo
-    lo.layer = 13
-    lo.style = osc_styles.rjno11line2
-    lo.alpha[1] =
-        math.min(255, user_opts.boxalpha + (255 - user_opts.boxalpha)*0.05)
-
-
-
---an = 9 这样右侧的时间变长才会往左，但y轴要调整
     lo = add_layout("tc_right")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 11 + 10 * 2.4 + 10 + 6 - 110/2 +17 , y = rjno1Y + 10 * 3 + 30 / 2 + 2 +0, an = 5, w = 110, h = 20}
-    lo.style = osc_styles.rjno140Buttons
+    lo.geometry =
+        {x = posX + pos_offsetX, y = bottomrowY, an = 6, w = 110, h = 18}
+    lo.style = osc_styles.timecodes
 
-
---an = 5 时文字居中显示 往2边增加，所以一定要用1，这样多出的文字只会往右侧增长
-	lo = add_layout("title")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 12 +25  , y = rjno1Y + 10 * 3 + 30 / 2 + 2 +8 , an = 1, w = 450, h = 20}
-    lo.style = osc_styles.rjno116Buttons
-    lo.button.maxchars = 102
-
-	geo ={x = rjno1X + 10 * 2.4 * 12 +21 + 507/2 , y = rjno1Y + 10 * 3 + 30 / 2 + 2 +0 , an = 5, w = 507, h = 20}
-
-   new_element("titlebg", "box")
-    lo = add_layout("titlebg")
-
-    lo.geometry = geo
-    lo.layer = 13
-    lo.style = osc_styles.rjno11line3
-    lo.alpha[1] =
-        math.min(255, user_opts.boxalpha + (255 - user_opts.boxalpha)*0.05)
-
-
---an = 5
     lo = add_layout("cache")
-    lo.geometry = {x = rjno1X + 10 * 2.4 * 36 -3, y = rjno1Y + 10 * 3 + 30 / 2 + 2+0, an = 5, w = 110, h = 20}
-    lo.style = osc_styles.rjno140Buttons
-
-
-
-
-    lo = add_layout("cy_audio")
-    lo.geometry = {x = rjno1X + 10 * 110 -30*2-5-35-65, y = rjno1Y + 10 * 5.1 -4, an = 5, w = 64, h = 30}
-    lo.style = osc_styles.rjno120Buttons
-
-    lo = add_layout("cy_sub")
-    lo.geometry = {x = rjno1X + 10 * 110 -30*2 -5 -35, y = rjno1Y + 10 * 5.1-4, an = 5, w = 64, h = 30}
-    lo.style = osc_styles.rjno120Buttons
-
---an = 1 图标最左侧才能点击
-    lo = add_layout("volume")
-    lo.geometry = {x = rjno1X + 10 * 110 -30*2 -2, y = rjno1Y + 10 * 5 + 11, an = 1, w = 26, h = 30}
-    lo.style = osc_styles.rjno125Buttons
---an = 1 图标最左侧才能点击
-    lo = add_layout("tog_fs")
-    lo.geometry = {x = rjno1X + 10 * 110 -30, y = rjno1Y + 10 * 5 + 13 -1 , an = 1, w = 26, h =30 }
-    lo.style = osc_styles.rjno125Buttons
+    lo.geometry =
+        {x = posX, y = bottomrowY, an = 5, w = 110, h = 18}
+    lo.style = osc_styles.timecodes
 
 end
 
@@ -1722,6 +1885,475 @@ layouts["topbar"] = function()
     bar_layout(1)
 end
 
+function getDeltaListItem(listKey, curKey, delta, clamp)
+    local pos = mp.get_property_number(curKey, 0) + 1
+    local count, limlist = limited_list(listKey, pos)
+    if count == 0 then
+        return nil
+    end
+
+    local curIndex = -1
+    for i, v in ipairs(limlist) do
+        if v.current then
+            curIndex = i
+            break
+        end
+    end
+
+    local deltaIndex = curIndex + delta
+    if curIndex == -1 then
+        return nil
+    elseif deltaIndex < 1 then
+        if clamp then
+            deltaIndex = 1
+        else
+            return nil
+        end
+    elseif deltaIndex > count then
+        if clamp then
+            deltaIndex = count
+        else
+            return nil
+        end
+    end
+
+    local deltaItem = limlist[deltaIndex]
+    return deltaIndex, deltaItem
+end
+
+function getDeltaChapter(delta)
+    local deltaIndex, deltaChapter = getDeltaListItem('chapter-list', 'chapter', delta, true)
+    if deltaChapter == nil then -- Video Done
+        return nil
+    end
+    deltaChapter = {
+        index = deltaIndex,
+        time = deltaChapter.time,
+        title = deltaChapter.title,
+        label = nil,
+    }
+    local label = deltaChapter.title
+    if label == nil then
+        label = string.format('Chapter %02d', deltaChapter.index)
+    end
+    -- local time = mp.format_time(deltaChapter.time)
+    -- deltaChapter.label = string.format('[%s] %s', time, label)
+    deltaChapter.label = label
+    return deltaChapter
+end
+
+function getDeltaPlaylistItem(delta)
+    local deltaIndex, deltaItem = getDeltaListItem('playlist', 'playlist-pos', delta, false)
+    if deltaItem == nil then -- Video Done
+        return nil
+    end
+    deltaItem = {
+        index = deltaIndex,
+        filename = deltaItem.filename,
+        title = deltaItem.title,
+        label = nil,
+    }
+    local label = deltaItem.title
+    if label == nil then
+        local _, filename = utils.split_path(deltaItem.filename)
+        label = filename
+    end
+    deltaItem.label = label
+    return deltaItem
+end
+
+layouts["tethys"] = function()
+    local direction = -1
+    local osc_geo = {
+        x = -2,
+        y,
+        an = (direction < 0) and 7 or 1,
+        w,
+        h = tethys.bottomBarHeight,
+    }
+
+    -- Alias
+    local buttonW = tethys.buttonW
+    local buttonH = tethys.buttonH
+    local smallButtonSize = tethys.smallButtonSize
+
+    -- Props
+    local padX = 9
+    local padY = 3
+    local tcW = (state.tc_ms) and 170 or 110
+    local tsW = 90
+    local minW = (buttonW + padX)*5 + (tcW + padX)*4 + (tsW + padX)*2
+
+    -- Special topbar handling when window controls are present
+    if ((osc_param.display_aspect > 0) and (osc_param.playresx < minW)) then
+        osc_param.playresy = minW / osc_param.display_aspect
+        osc_param.playresx = osc_param.playresy * osc_param.display_aspect
+    end
+
+    -- osc_geo.y = direction * (54 + user_opts.barmargin)
+    osc_geo.y = direction * (osc_geo.h)
+    osc_geo.w = osc_param.playresx + 4
+    if direction < 0 then
+        osc_geo.y = osc_geo.y + osc_param.playresy
+    end
+
+    -- local line1 = osc_geo.y - direction * (9 + padY)
+    -- local line2 = osc_geo.y - direction * (36 + padY)
+    local line1Y = osc_geo.y - direction * tethys.seekbarHeight
+    local line2Y = osc_geo.y - direction * tethys.controlsHeight
+    local leftPad = padX
+    local rightPad = padX
+    local leftX = osc_geo.x + leftPad
+    local rightX = osc_geo.w - rightPad
+    local leftSectionWidth = leftPad
+    local rightSectionWidth = rightPad
+
+    osc_param.areas = {}
+
+    add_area("input", get_hitbox_coords(osc_geo.x, osc_geo.y, osc_geo.an,
+                                        osc_geo.w, osc_geo.h))
+
+    local sh_area_y0, sh_area_y1
+    if direction > 0 then
+        -- deadzone below OSC
+        sh_area_y0 = user_opts.barmargin
+        sh_area_y1 = (osc_geo.y + (osc_geo.h / 2)) +
+                     get_align(1 - (2*user_opts.deadzonesize),
+                     osc_param.playresy - (osc_geo.y + (osc_geo.h / 2)), 0, 0)
+    else
+        -- deadzone above OSC
+        sh_area_y0 = get_align(-1 + (2*user_opts.deadzonesize),
+                               osc_geo.y - (osc_geo.h / 2), 0, 0)
+        sh_area_y1 = osc_param.playresy - user_opts.barmargin
+    end
+    add_area("showhide", 0, sh_area_y0, osc_param.playresx, sh_area_y1)
+
+    local lo, geo
+
+    -- Background bar
+    new_element("bgbox", "box")
+    lo = add_layout("bgbox")
+
+    local boxBlur = 20 -- 0 .. 20
+    geo = {
+        x = osc_geo.x - boxBlur,
+        y = osc_geo.y - boxBlur,
+        an = osc_geo.an,
+        w = osc_geo.w + boxBlur*2,
+        h = osc_geo.h + boxBlur*2,
+    }
+    lo.geometry = geo
+    lo.layer = 10
+    lo.style = ("{\\rDefault\\blur(%d)\\bord0\\1c&H000000\\3c&HFFFFFF}"):format(boxBlur)
+    lo.alpha[1] = 80 --- 0 (opaque) to 255 (fully transparent)
+
+    function setButtonTooltip(button_lo, text)
+        button_lo.button.tooltip = text
+        button_lo.button.tooltip_style = tethysStyle.buttonTooltip
+        local hw = button_lo.geometry.w/2
+        local ty = osc_geo.y + padY * direction
+        local an
+        local tx
+        local edgeThreshold = 60
+        if button_lo.geometry.x - edgeThreshold < osc_geo.x + padX then
+            an = 1 -- x,y is bottom-left
+            tx = math.max(osc_geo.x + padX, button_lo.geometry.x - hw)
+        elseif osc_geo.x + osc_geo.w - padX < button_lo.geometry.x + edgeThreshold then
+            an = 3 -- x,y is bottom-right
+            tx = math.min(button_lo.geometry.x + hw, osc_geo.x + osc_geo.w - padX)
+        else
+            an = 2 -- x,y is bottom-center
+            tx = button_lo.geometry.x
+        end
+        button_lo.button.tooltip_an = an
+        button_lo.button.tooltip_geo = { x = tx , y = ty }
+    end
+
+    ---- Left Section (Added Left-to-Right)
+    -- Playback control buttons
+    geo = {
+        x = leftX + leftSectionWidth + buttonW/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = buttonW,
+        h = buttonH,
+    }
+    lo = add_layout("playpause")
+    lo.geometry = geo
+    lo.style = tethysStyle.button
+    setButtonTooltip(lo, "Play (Space)")
+    leftSectionWidth = leftSectionWidth + geo.w
+
+    -- Skip Backwards
+    geo = {
+        x = leftX + leftSectionWidth + smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("skipback")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, {
+        ("Back %ds (LeftArrow)"):format(tethys.skipBy),
+        ("Back %ds (RightClick)"):format(tethys.skipByMore),
+    })
+    leftSectionWidth = leftSectionWidth + geo.w
+
+    -- Skip Forwards
+    geo = {
+        x = leftX + leftSectionWidth + smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("skipfrwd")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, {
+        ("Forward %ds (RightArrow)"):format(tethys.skipBy),
+        ("Forward %ds (RightClick)"):format(tethys.skipByMore),
+    })
+    leftSectionWidth = leftSectionWidth + geo.w
+
+    -- Chapter Prev
+    geo = {
+        x = leftX + leftSectionWidth + smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("ch_prev")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, function()
+        local shortcutLabel = "Prev Chapter (PgDn)"
+        local prevChapter = getDeltaChapter(-1)
+        if prevChapter == nil then
+            return { shortcutLabel }
+        else
+            return { tethysStyle.text..prevChapter.label, shortcutLabel }
+        end
+    end)
+    if elements["ch_prev"].visible then
+        leftSectionWidth = leftSectionWidth + geo.w
+    end
+
+    -- Chapter Next
+    geo = {
+        x = leftX + leftSectionWidth + smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("ch_next")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, function()
+        local shortcutLabel = "Next Chapter (PgUp)"
+        local nextChapter = getDeltaChapter(1)
+        if nextChapter == nil then
+            return { shortcutLabel }
+        else
+            return { tethysStyle.text..nextChapter.label, shortcutLabel }
+        end
+    end)
+    if elements["ch_next"].visible then
+        leftSectionWidth = leftSectionWidth + geo.w
+    end
+
+    -- Pad between Skip/Chapter and Volume
+    leftSectionWidth = leftSectionWidth + padX
+
+    -- Volume
+    -- Icon is forcibly left aligned for some reason
+    geo = {
+        x = leftX + leftSectionWidth,
+        y = line1Y + buttonH/2,
+        an = 4, -- x,y is left-center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("volume")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, {"Volume Down (9) Up (0)", "Mute (M)"})
+    if elements["volume"].visible then
+        leftSectionWidth = leftSectionWidth + geo.w
+    end
+
+    ---- Right Section (Added Right-to-Left)
+    -- Fullscreen button
+    geo = {
+        x = rightX - rightSectionWidth - smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is left-center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("tog_fs")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, "Fullscreen (F)")
+    if elements["tog_fs"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    -- Subtitle track
+    local trackButtonSize = tethys.trackButtonSize
+    local trackButtonWidth = trackButtonSize * 2.5
+    geo = {
+        x = rightX - rightSectionWidth - trackButtonWidth/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = trackButtonWidth,
+        h = trackButtonSize,
+    }
+    lo = add_layout("cy_sub")
+    lo.geometry = geo
+    lo.style = tethysStyle.trackButton
+    setButtonTooltip(lo, "Subtitle Track")
+    if elements["cy_sub"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    -- Audio track
+    geo = {
+        x = rightX - rightSectionWidth - trackButtonWidth/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = trackButtonWidth,
+        h = trackButtonSize,
+    }
+    lo = add_layout("cy_audio")
+    lo.geometry = geo
+    lo.style = tethysStyle.trackButton
+    setButtonTooltip(lo, "Audio Track (#)")
+    if elements["cy_audio"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    -- Pad between Fullscreen/Tracks and Playlist
+    rightSectionWidth = rightSectionWidth + padX
+
+    -- Playlist next
+    geo = {
+        x = rightX - rightSectionWidth - smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("pl_next")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, function()
+        local shortcutLabel = "Next (> or Enter)"
+        local nextItem = getDeltaPlaylistItem(1)
+        if nextItem == nil then
+            return { shortcutLabel }
+        else
+            return { tethysStyle.text..nextItem.label, shortcutLabel }
+        end
+    end)
+    if elements["pl_next"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    -- Playlist prev
+    geo = {
+        x = rightX - rightSectionWidth - smallButtonSize/2,
+        y = line1Y + buttonH/2,
+        an = 5, -- x,y is center
+        w = smallButtonSize,
+        h = smallButtonSize,
+    }
+    lo = add_layout("pl_prev")
+    lo.geometry = geo
+    lo.style = tethysStyle.smallButton
+    setButtonTooltip(lo, function()
+        local shortcutLabel = "Previous (<)"
+        local nextItem = getDeltaPlaylistItem(-1)
+        if nextItem == nil then
+            return { shortcutLabel }
+        else
+            return { tethysStyle.text..nextItem.label, shortcutLabel }
+        end
+    end)
+    if elements["pl_prev"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    -- Pad between Playlist and Cache
+    if elements["cache"].visible then
+        rightSectionWidth = rightSectionWidth + padX
+    end
+
+    -- Cache
+    geo = {
+        x = rightX - rightSectionWidth,
+        y = line1Y + buttonH/2,
+        an = 6, -- x,y is right-center
+        w = 110,
+        h = smallButtonSize,
+    }
+    lo = add_layout("cache")
+    lo.geometry = geo
+    lo.style = tethysStyle.cacheText
+    if elements["cache"].visible then
+        rightSectionWidth = rightSectionWidth + geo.w
+    end
+
+    ---- Center Section
+    -- Pad Center
+    leftSectionWidth = leftSectionWidth + padX
+    rightSectionWidth = rightSectionWidth + padX
+
+    -- Timecodes
+    geo = {
+        x = leftX + leftSectionWidth,
+        y = line1Y + buttonH/2,
+        an = 4, -- x,y is top-left
+        w = osc_geo.w - leftSectionWidth - rightSectionWidth,
+        h = buttonH,
+    }
+    lo = add_layout("tc_both")
+    lo.geometry = geo
+    lo.style = tethysStyle.timecode
+
+
+    -- Seekbar
+    -- geo = { x = sb_l, y = geo.y, an = geo.an,
+    --         w = math.max(0, sb_r - sb_l), h = geo.h }
+    geo = {
+        x = osc_geo.x,
+        y = osc_geo.y,
+        an = 7,
+        w = osc_geo.w,
+        h = tethys.seekbarHeight,
+    }
+
+    lo = add_layout("seekbar")
+    lo.geometry = geo
+    lo.style = tethysStyle.seekbar
+    lo.slider.border = 0
+    lo.slider.gap = 2
+    lo.slider.tooltip_style = tethysStyle.seekbarTimestamp
+    lo.slider.tooltip_an = 2
+    lo.slider.stype = "knob" -- user_opts["seekbarstyle"] -- bar diamond knob
+    lo.slider.rtype = "slider" -- user_opts["seekrangestyle"] -- bar line slider inverted none
+
+    if direction < 0 then
+        osc_param.video_margins.b = osc_geo.h / osc_param.playresy
+    else
+        osc_param.video_margins.t = osc_geo.h / osc_param.playresy
+    end
+end
+
 -- Validate string type user options
 function validate_user_opts()
     if layouts[user_opts.layout] == nil then
@@ -1772,6 +2404,7 @@ function update_options(list)
     validate_user_opts()
     request_tick()
     visibility_mode(user_opts.visibility, true)
+    update_duration_watch()
     request_init()
 end
 
@@ -1823,7 +2456,8 @@ function osc_init()
     ne = new_element("title", "button")
 
     ne.content = function ()
-        local title = mp.command_native({"expand-text", user_opts.title})
+        local title = state.forced_title or
+                      mp.command_native({"expand-text", user_opts.title})
         -- escape ASS, and strip newlines and trailing slashes
         title = title:gsub("\\n", " "):gsub("\\$", ""):gsub("{","\\{")
         return not (title == "") and title or "mpv"
@@ -1846,12 +2480,14 @@ function osc_init()
     -- prev
     ne = new_element("pl_prev", "button")
 
-    ne.content = "\238\132\144"
+    ne.content = tethysIcon_pl_prev
     ne.enabled = (pl_pos > 1) or (loop ~= "no")
     ne.eventresponder["mbtn_left_up"] =
         function ()
             mp.commandv("playlist-prev", "weak")
-            show_message(get_playlist(), 3)
+            if user_opts.playlist_osd then
+                show_message(get_playlist(), 3)
+            end
         end
     ne.eventresponder["shift+mbtn_left_up"] =
         function () show_message(get_playlist(), 3) end
@@ -1861,12 +2497,14 @@ function osc_init()
     --next
     ne = new_element("pl_next", "button")
 
-    ne.content = "\238\132\129"
+    ne.content = tethysIcon_pl_next
     ne.enabled = (have_pl and (pl_pos < pl_count)) or (loop ~= "no")
     ne.eventresponder["mbtn_left_up"] =
         function ()
             mp.commandv("playlist-next", "weak")
-            show_message(get_playlist(), 3)
+            if user_opts.playlist_osd then
+                show_message(get_playlist(), 3)
+            end
         end
     ne.eventresponder["shift+mbtn_left_up"] =
         function () show_message(get_playlist(), 3) end
@@ -1881,9 +2519,9 @@ function osc_init()
 
     ne.content = function ()
         if mp.get_property("pause") == "yes" then
-            return ("\238\132\129")
+            return tethysIcon_play
         else
-            return ("\238\128\130")
+            return tethysIcon_pause
         end
     end
     ne.eventresponder["mbtn_left_up"] =
@@ -1893,35 +2531,38 @@ function osc_init()
     ne = new_element("skipback", "button")
 
     ne.softrepeat = true
-    ne.content = "\238\128\132"
+    ne.content = tethysIcon_skipback
     ne.eventresponder["mbtn_left_down"] =
-        function () mp.commandv("seek", -5, "relative", "keyframes") end
+        function () mp.commandv("seek", -tethys.skipBy, tethys.skipMode) end
     ne.eventresponder["shift+mbtn_left_down"] =
         function () mp.commandv("frame-back-step") end
     ne.eventresponder["mbtn_right_down"] =
-        function () mp.commandv("seek", -30, "relative", "keyframes") end
+        function () mp.commandv("seek", -tethys.skipByMore, tethys.skipMode) end
 
     --skipfrwd
     ne = new_element("skipfrwd", "button")
 
     ne.softrepeat = true
-    ne.content = "\238\128\133"
+    ne.content = tethysIcon_skipfrwd
     ne.eventresponder["mbtn_left_down"] =
-        function () mp.commandv("seek", 10, "relative", "keyframes") end
+        function () mp.commandv("seek", tethys.skipBy, tethys.skipMode) end
     ne.eventresponder["shift+mbtn_left_down"] =
         function () mp.commandv("frame-step") end
     ne.eventresponder["mbtn_right_down"] =
-        function () mp.commandv("seek", 60, "relative", "keyframes") end
+        function () mp.commandv("seek", tethys.skipByMore, tethys.skipMode) end
 
     --ch_prev
     ne = new_element("ch_prev", "button")
 
+    ne.visible = have_ch
     ne.enabled = have_ch
-    ne.content = "\238\132\132"
+    ne.content = tethysIcon_ch_prev
     ne.eventresponder["mbtn_left_up"] =
         function ()
             mp.commandv("add", "chapter", -1)
-            show_message(get_chapterlist(), 3)
+            if user_opts.chapters_osd then
+                show_message(get_chapterlist(), 3)
+            end
         end
     ne.eventresponder["shift+mbtn_left_up"] =
         function () show_message(get_chapterlist(), 3) end
@@ -1931,12 +2572,15 @@ function osc_init()
     --ch_next
     ne = new_element("ch_next", "button")
 
+    ne.visible = have_ch
     ne.enabled = have_ch
-    ne.content = "\238\132\133"
+    ne.content = tethysIcon_ch_next
     ne.eventresponder["mbtn_left_up"] =
         function ()
             mp.commandv("add", "chapter", 1)
-            show_message(get_chapterlist(), 3)
+            if user_opts.chapters_osd then
+                show_message(get_chapterlist(), 3)
+            end
         end
     ne.eventresponder["shift+mbtn_left_up"] =
         function () show_message(get_chapterlist(), 3) end
@@ -1949,6 +2593,7 @@ function osc_init()
     --cy_audio
     ne = new_element("cy_audio", "button")
 
+    ne.visible = (#tracks_osc.audio > 1)
     ne.enabled = (#tracks_osc.audio > 0)
     ne.content = function ()
         local aid = "–"
@@ -2000,6 +2645,7 @@ function osc_init()
     ne = new_element("seekbar", "slider")
 
     ne.enabled = not (mp.get_property("percent-pos") == nil)
+    state.slider_element = ne.enabled and ne or nil  -- used for forced_title
     ne.slider.markerF = function ()
         local duration = mp.get_property_number("duration", nil)
         if not (duration == nil) then
@@ -2051,24 +2697,77 @@ function osc_init()
     end
     ne.eventresponder["mouse_move"] = --keyframe seeking when mouse is dragged
         function (element)
+            if not element.state.mbtnleft then
+                return -- allow drag for mbtnleft only
+            end
             -- mouse move events may pile up during seeking and may still get
             -- sent when the user is done seeking, so we need to throw away
             -- identical seeks
             local seekto = get_slider_value(element)
             if (element.state.lastseek == nil) or
                 (not (element.state.lastseek == seekto)) then
-                    mp.commandv("seek", seekto, "absolute-percent",
-                        user_opts.seekbarkeyframes and "keyframes" or "exact")
+                    local flags = "absolute-percent"
+                    if not user_opts.seekbarkeyframes then
+                        flags = flags .. "+exact"
+                    end
+                    mp.commandv("seek", seekto, flags)
                     element.state.lastseek = seekto
             end
 
         end
     ne.eventresponder["mbtn_left_down"] = --exact seeks on single clicks
-        function (element) mp.commandv("seek", get_slider_value(element),
-            "absolute-percent", "exact") end
+        function (element)
+            element.state.mbtnleft = true
+            mp.commandv("seek", get_slider_value(element), "absolute-percent", "exact")
+        end
+    ne.eventresponder['mbtn_left_up'] =
+        function (element)
+            element.state.mbtnleft = false
+        end
+    ne.eventresponder['mbtn_right_down'] = --seeks to chapter start
+        function (element)
+            -- Source: https://github.com/maoiscat/mpv-osc-morden/blob/main/morden.lua#L1395-L1413
+            local duration = mp.get_property_number("duration", nil)
+            if not (duration == nil) then
+                local chapters = mp.get_property_native("chapter-list", {})
+                if #chapters > 0 then
+                    local pos = get_slider_value(element)
+                    local ch = #chapters
+                    for n = 1, ch do
+                        if chapters[n].time / duration * 100 >= pos then
+                            ch = n - 1
+                            break
+                        end
+                    end
+                    mp.commandv("set", "chapter", ch - 1)
+                    --if chapters[ch].title then show_message(chapters[ch].time) end
+                end
+            end
+        end
     ne.eventresponder["reset"] =
         function (element) element.state.lastseek = nil end
 
+    -- tc_both (current pos)
+    ne = new_element("tc_both", "button")
+
+    ne.content = function ()
+        if (state.rightTC_trem) then
+            if (state.tc_ms) then
+                return (mp.get_property_osd("playback-time/full").." / ".."-"..mp.get_property_osd("playtime-remaining/full"))
+            else
+                return (mp.get_property_osd("playback-time").." / ".."-"..mp.get_property_osd("playtime-remaining"))
+            end
+        else
+            if (state.tc_ms) then
+                return (mp.get_property_osd("playback-time/full").." / "..mp.get_property_osd("duration/full"))
+            else
+                return (mp.get_property_osd("playback-time").." / "..mp.get_property_osd("duration"))
+            end
+        end
+    end
+    ne.eventresponder["mbtn_left_up"] = function ()
+        state.rightTC_trem = not state.rightTC_trem
+    end
 
     -- tc_left (current pos)
     ne = new_element("tc_left", "button")
@@ -2117,7 +2816,7 @@ function osc_init()
             -- probably not a network stream
             return ""
         end
-        local dmx_cache = mp.get_property_number("demuxer-cache-duration")
+        local dmx_cache = cache_state and cache_state["cache-duration"]
         local thresh = math.min(state.dmx_cache * 0.05, 5)  -- 5% or 5s
         if dmx_cache and math.abs(dmx_cache - state.dmx_cache) >= thresh then
             state.dmx_cache = dmx_cache
@@ -2125,10 +2824,10 @@ function osc_init()
             dmx_cache = state.dmx_cache
         end
         local min = math.floor(dmx_cache / 60)
-        local sec = dmx_cache % 60
+        local sec = math.floor(dmx_cache % 60) -- don't round e.g. 59.9 to 60
         return "Cache: " .. (min > 0 and
             string.format("%sm%02.0fs", min, sec) or
-            string.format("%3.0fs", dmx_cache))
+            string.format("%3.0fs", sec))
     end
 
     -- volume
@@ -2181,7 +2880,10 @@ function update_margins()
     local margins = osc_param.video_margins
 
     -- Don't use margins if it's visible only temporarily.
-    if (not state.osc_visible) or (get_hidetimeout() >= 0) then
+    if (not state.osc_visible) or (get_hidetimeout() >= 0) or
+       (state.fullscreen and not user_opts.showfullscreen) or
+       (not state.fullscreen and not user_opts.showwindowed)
+    then
         margins = {l = 0, r = 0, t = 0, b = 0}
     end
 
@@ -2224,6 +2926,12 @@ end
 --
 
 
+function updateSubMarginY(oscVisible)
+    local defMarginY = 22 -- https://mpv.io/manual/master/#options-sub-margin-y
+    local subMarginY = oscVisible and (defMarginY+tethys.bottomBarHeight) or defMarginY
+    mp.set_property_number("sub-margin-y", subMarginY)
+end
+
 function show_osc()
     -- show when disabled can happen (e.g. mouse_move) due to async/delayed unbinding
     if not state.enabled then return end
@@ -2260,6 +2968,7 @@ function osc_visible(visible)
     if state.osc_visible ~= visible then
         state.osc_visible = visible
         update_margins()
+        updateSubMarginY(visible)
     end
     request_tick()
 end
@@ -2299,6 +3008,7 @@ function mouse_leave()
     end
     -- reset mouse position
     state.last_mouseX, state.last_mouseY = nil, nil
+    state.mouse_in_window = false
 end
 
 function request_init()
@@ -2317,6 +3027,7 @@ end
 
 function render_wipe()
     msg.trace("render_wipe()")
+    state.osd.data = "" -- allows set_osd to immediately update on enable
     state.osd:remove()
 end
 
@@ -2337,7 +3048,14 @@ function render()
     end
 
     -- init management
-    if state.initREQ then
+    if state.active_element then
+        -- mouse is held down on some element - keep ticking and igore initReq
+        -- till it's released, or else the mouse-up (click) will misbehave or
+        -- get ignored. that's because osc_init() recreates the osc elements,
+        -- but mouse handling depends on the elements staying unmodified
+        -- between mouse-down and mouse-up (using the index active_element).
+        request_tick()
+    elseif state.initREQ then
         osc_init()
         state.initREQ = false
 
@@ -2374,14 +3092,10 @@ function render()
             if (state.anitype == "out") then
                 osc_visible(false)
             end
-            state.anistart = nil
-            state.animation = nil
-            state.anitype =  nil
+            kill_animation()
         end
     else
-        state.anistart = nil
-        state.animation = nil
-        state.anitype =  nil
+        kill_animation()
     end
 
     --mouse show/hide area
@@ -2536,6 +3250,8 @@ function process_event(source, what)
 
     elseif source == "mouse_move" then
 
+        state.mouse_in_window = true
+
         local mouseX, mouseY = get_virt_mouse_pos()
         if (user_opts.minmousemove == 0) or
             (not ((state.last_mouseX == nil) or (state.last_mouseY == nil)) and
@@ -2551,8 +3267,10 @@ function process_event(source, what)
         if element_has_action(elements[n], action) then
             elements[n].eventresponder[action](elements[n])
         end
-        request_tick()
     end
+
+    -- ensure rendering after any (mouse) event - icons could change etc
+    request_tick()
 end
 
 
@@ -2583,6 +3301,11 @@ local santa_hat_lines = {
 
 -- called by mpv on every frame
 function tick()
+    if state.marginsREQ == true then
+        update_margins()
+        state.marginsREQ = false
+    end
+
     if (not state.enabled) then return end
 
     if (state.idle) then
@@ -2627,13 +3350,23 @@ function tick()
         render()
     else
         -- Flush OSD
-        set_osd(osc_param.playresy, osc_param.playresy, "")
+        render_wipe()
     end
 
     state.tick_last_time = mp.get_time()
 
     if state.anitype ~= nil then
-        request_tick()
+        -- state.anistart can be nil - animation should now start, or it can
+        -- be a timestamp when it started. state.idle has no animation.
+        if not state.idle and
+           (not state.anistart or
+            mp.get_time() < 1 + state.anistart + user_opts.fadeduration/1000)
+        then
+            -- animating or starting, or still within 1s past the deadline
+            request_tick()
+        else
+            kill_animation()
+        end
     end
 end
 
@@ -2661,12 +3394,42 @@ function enable_osc(enable)
     end
 end
 
+-- duration is observed for the sole purpose of updating chapter markers
+-- positions. live streams with chapters are very rare, and the update is also
+-- expensive (with request_init), so it's only observed when we have chapters
+-- and the user didn't disable the livemarkers option (update_duration_watch).
+function on_duration() request_init() end
+
+local duration_watched = false
+function update_duration_watch()
+    local want_watch = user_opts.livemarkers and
+                       (mp.get_property_number("chapters", 0) or 0) > 0 and
+                       true or false  -- ensure it's a boolean
+
+    if (want_watch ~= duration_watched) then
+        if want_watch then
+            mp.observe_property("duration", nil, on_duration)
+        else
+            mp.unobserve_property(on_duration)
+        end
+        duration_watched = want_watch
+    end
+end
+
 validate_user_opts()
+update_duration_watch()
 
 mp.register_event("shutdown", shutdown)
 mp.register_event("start-file", request_init)
-mp.register_event("tracks-changed", request_init)
+mp.observe_property("track-list", nil, request_init)
 mp.observe_property("playlist", nil, request_init)
+mp.observe_property("chapter-list", "native", function(_, list)
+    list = list or {}  -- safety, shouldn't return nil
+    table.sort(list, function(a, b) return a.time < b.time end)
+    state.chapter_list = list
+    update_duration_watch()
+    request_init()
+end)
 
 mp.register_script_message("osc-message", show_message)
 mp.register_script_message("osc-chapterlist", function(dur)
@@ -2686,6 +3449,7 @@ end)
 mp.observe_property("fullscreen", "bool",
     function(name, val)
         state.fullscreen = val
+        state.marginsREQ = true
         request_init_resize()
     end
 )
@@ -2801,6 +3565,7 @@ function visibility_mode(mode, no_osd)
     end
 
     user_opts.visibility = mode
+    utils.shared_script_property_set("osc-visibility", mode)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
         mp.osd_message("OSC visibility: " .. mode)

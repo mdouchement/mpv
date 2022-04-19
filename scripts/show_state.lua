@@ -52,6 +52,16 @@ opts = {
 }
 options.read_options(opts)
 
+local state
+
+function normalize(number)
+    if number == nil then
+        return 0
+    end
+
+    return number
+end
+
 function format_duration(duration)
     local h = math.floor(duration / 3600)
     local m = math.floor(duration % 3600 / 60)
@@ -80,45 +90,51 @@ function render(msg)
 end
 
 function compute_state()
-    local filename = mp.get_property("filename")
-    local pcurrent = mp.get_property("playlist-pos-1")
-    local pcount = mp.get_property("playlist-count")
-
     local percent = mp.get_property_number("percent-pos")
     local position = mp.get_property_number("time-pos")
     local remaining = mp.get_property_number("playtime-remaining")
     local total = mp.get_property_number("duration")
 
-    local msg = string.format(
+    return string.format(
         "%s\\N%s/%s\\N%d%%    %s (%s)    %s",
-        filename,
-        pcurrent,
-        pcount,
-        percent,
-        format_duration(position),
-        format_duration(remaining),
-        format_duration(total)
+        state.filename,
+        state.pcurrent,
+        state.pcount,
+        normalize(percent),
+        format_duration(normalize(position)),
+        format_duration(normalize(remaining)),
+        format_duration(normalize(total))
     )
-    render(msg)
 end
 
-local running = false
 function show_state()
-    if running then
+    if state.running then
         return
     end
-    running = true
+    state.running = true
 
     seconds = 0.0
     timer = mp.add_periodic_timer(0.05, function()
-        compute_state()
+        local msg = compute_state()
+        render(msg)
+
         seconds = seconds + 0.05
         if seconds >= opts.duration then
             render('')
             timer:kill()
-            running = false
+            state.running = false
         end
     end)
 end
 
+function initialize()
+    state = {
+        running = false,
+        filename = mp.get_property("filename"),
+        pcurrent = mp.get_property("playlist-pos-1"),
+        pcount = mp.get_property("playlist-count")
+    }
+end
+
+mp.register_event("start-file", initialize)
 mp.add_key_binding(opts.key_binding, "show-state", show_state)

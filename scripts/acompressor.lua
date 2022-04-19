@@ -1,6 +1,8 @@
 -- This script adds control to the dynamic range compression ffmpeg
 -- filter including key bindings for adjusting parameters.
 --
+-- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/acompressor.lua
+--
 -- See https://ffmpeg.org/ffmpeg-filters.html#acompressor for explanation
 -- of the parameteres.
 
