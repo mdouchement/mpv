@@ -136,5 +136,6 @@ function initialize()
     }
 end
 
-mp.register_event("start-file", initialize)
+-- mp.register_event("start-file", initialize)
+mp.observe_property("playlist-count", nil, initialize)
 mp.add_key_binding(opts.key_binding, "show-state", show_state)
