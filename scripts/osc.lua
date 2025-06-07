@@ -3,7 +3,8 @@ local msg = require 'mp.msg'
 local opt = require 'mp.options'
 local utils = require 'mp.utils'
 
--- https://github.com/Zren/mpv-osc-tethys
+-- Borrowed from https://github.com/Zren/mpv-osc-tethys
+--   Alternative: https://github.com/cyl0/ModernX
 
 --
 -- Parameters
@@ -2912,13 +2913,13 @@ function update_margins()
         reset_margins()
     end
 
-    utils.shared_script_property_set("osc-margins",
+    mp.set_property("user-data/osc/margins",
         string.format("%f,%f,%f,%f", margins.l, margins.r, margins.t, margins.b))
 end
 
 function shutdown()
     reset_margins()
-    utils.shared_script_property_set("osc-margins", nil)
+    mp.set_property("user-data/osc/margins", "")
 end
 
 --
@@ -3565,7 +3566,7 @@ function visibility_mode(mode, no_osd)
     end
 
     user_opts.visibility = mode
-    utils.shared_script_property_set("osc-visibility", mode)
+    mp.set_property("user-data/osc/visibility", mode)
 
     if not no_osd and tonumber(mp.get_property("osd-level")) >= 1 then
         mp.osd_message("OSC visibility: " .. mode)
